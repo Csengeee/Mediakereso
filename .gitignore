@@ -13,5 +13,5 @@ env/
 # Környezeti változók (titkos jelszavak, API kulcsok helye)
 .env
 
-.kepkereso.xlsx
-.videokereso.xlsx
+kepkereso.xlsx
+videokereso.xlsx
