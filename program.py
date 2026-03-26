@@ -148,7 +148,7 @@ class MediaKeresoApp(ctk.CTk):
         if not nyers_bevitel: return
 
         tiszta_bevitel = ekezet_mentesites(nyers_bevitel)
-        keresett_szavak = [szo for szo in tiszta_bevitel.split() if len(szo) > 2]
+        keresett_szavak = [szo for szo in tiszta_bevitel.split() if len(szo) >= 2]
         
         talalati_lista = []
 
