@@ -1,0 +1,17 @@
+# Python gyorsítótárak
+__pycache__/
+*.py[cod]
+
+# Virtuális környezet (nagyon fontos, hogy ne töltsd fel!)
+venv/
+env/
+.venv/
+
+# VS Code beállítások (opcionális)
+.vscode/
+
+# Környezeti változók (titkos jelszavak, API kulcsok helye)
+.env
+
+.kepkereso.xlsx
+.videokereso.xlsx
