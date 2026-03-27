@@ -26,8 +26,15 @@ class MediaKeresoApp(ctk.CTk):
 
         self.title("Egyetemi Médiatár - Kereső Szoftver")
         self.geometry("1100x700")
-
+        
         ctk.set_appearance_mode("dark")
+
+        #keresesi allapotok
+        self.search_job = None
+        self.osszes_talalat = []  # Itt tároljuk a teljes listát
+        self.aktualis_limit = 30  # Ennyit mutatunk egyszerre
+
+        self.df = pd.DataFrame(columns=['Címkék', 'Fájlnév', 'Elérési út', 'search_tags', 'search_name'])
 
         # Adatok betöltése
         # Betöltés több forrásból: videokereso.xlsx és kepkereso.xlsx
@@ -52,21 +59,21 @@ class MediaKeresoApp(ctk.CTk):
                     if 'Elérési út' not in df.columns:
                         df['Elérési út'] = ''
                     dfs.append(df)
-            if not dfs:
-                raise FileNotFoundError("Nem található egyik megadott Excel sem.")
-            self.df = pd.concat(dfs, ignore_index=True)
-
-            # Tisztítás és kereséshez előkészítés: a fájlnév és az elérési út egyaránt kereshető
-            self.df['Címkék'] = self.df['Címkék'].fillna("").astype(str)
-            self.df['Fájlnév'] = self.df['Fájlnév'].fillna("").astype(str)
-            self.df['Elérési út'] = self.df['Elérési út'].fillna("").astype(str)
-            self.df['search_tags'] = self.df['Címkék'].apply(ekezet_mentesites)
-            self.df['search_name'] = (self.df['Fájlnév'] + ' ' + self.df['Elérési út']).apply(ekezet_mentesites)
+            if dfs:
+                self.df = pd.concat(dfs, ignore_index=True)
+                self.df = self.df.fillna("")
+                self.df['search_tags'] = self.df['Címkék'].astype(str).apply(ekezet_mentesites)
+                self.df['search_name'] = (self.df['Fájlnév'].astype(str) + ' ' + self.df['Elérési út'].astype(str)).apply(ekezet_mentesites)
+                print(f"Sikeres betöltés: {len(self.df)} sor.")
+            else:
+                print("Figyelem: Nem található Excel fájl.")
         except Exception as e:
             print(f"Hiba az Excel beolvasásakor: {e}")
 
-# --- Megjelenés beállítása - ELRENDEZÉS ---
+        self.setup_ui()
 
+# --- Megjelenés beállítása - ELRENDEZÉS ---
+    def setup_ui(self):
                 # --- ELRENDEZÉS: SIDEBAR ---
         self.sidebar_container = ctk.CTkFrame(self, width=220, corner_radius=0, fg_color="transparent")
         self.sidebar_container.pack(side="left", fill="y", padx=(20, 0), pady=20)
@@ -84,7 +91,7 @@ class MediaKeresoApp(ctk.CTk):
         ctk.CTkLabel(self.sidebar_container, text="KATEGÓRIÁK", font=("Arial", 16, "bold")).pack(pady=(0, 10))
 
         # 3. Kategória gombok (A cím alá)
-        kedvencek = ["2023", "2024", "2025", "GTK", "MIK", 
+        kedvencek = ["2023", "2024", "2025", "2026", "GTK", "MIK", 
                      "MK", "HTK", "GKZ", "Hajo", "Aula", 
                      "Konferencia", "Balaton", "Sport"]
         for szo in kedvencek:
@@ -106,6 +113,8 @@ class MediaKeresoApp(ctk.CTk):
         # Jobb oldali oszlop, MAIN
         self.entry = ctk.CTkEntry(search_frame, placeholder_text="Keress címke vagy kulcsszavak alapján...", height=40, corner_radius=30)
         self.entry.pack(side="left", padx=10, pady=10, expand=True, fill="x")
+        #gépelés közbeni keresés
+        self.entry.bind("<KeyRelease>", self.kesleltetett_kereses) # Minden billentyűleütés után indítson egy új késleltetett keresést
         self.entry.bind("<Return>", lambda e: self.kereses()) # Enterre is keressen
 
         self.btn = ctk.CTkButton(search_frame, text="Keresés", command=self.kereses, width=100, height=40,  corner_radius=30)
@@ -120,14 +129,12 @@ class MediaKeresoApp(ctk.CTk):
         self.icon_path_img = None
         if PIL_AVAILABLE:
             try:
-                file_icon_path = os.path.join('icons', 'word.png')
-                path_icon_path = os.path.join('icons', 'location.png')
-                if os.path.exists(file_icon_path):
-                    self.icon_file_img = ctk.CTkImage(PILImage.open(file_icon_path), size=(16, 16))
-                if os.path.exists(path_icon_path):
-                    self.icon_path_img = ctk.CTkImage(PILImage.open(path_icon_path), size=(16, 16))
+                if os.path.exists('icons/word.png'):
+                    self.icon_file_img = ctk.CTkImage(PILImage.open('icons/word.png'), size=(16, 16))
+                if os.path.exists('icons/location.png'):
+                    self.icon_path_img = ctk.CTkImage(PILImage.open('icons/location.png'), size=(16, 16))
             except Exception as e:
-                print(f"Ikon betöltési hiba: {e}")
+                print(f"Ikon hiba: {e}")
 
     def valts_megjelenest(self):
         if self.appearance_mode_switch.get() == 1:
@@ -140,98 +147,100 @@ class MediaKeresoApp(ctk.CTk):
         self.entry.insert(0, szo)
         self.kereses()
 
-    def kereses(self):
-        for widget in self.results_list.winfo_children():
-            widget.destroy()
+    def kesleltetett_kereses(self, event):
+        if self.search_job:
+            self.after_cancel(self.search_job)
+        # 300ms várakozás az utolsó leütés után
+        self.search_job = self.after(300, self.kereses)
 
+    def kereses(self):
         nyers_bevitel = self.entry.get().strip()
-        if not nyers_bevitel: return
+        if not nyers_bevitel:
+            self.osszes_talalat = []
+            self.megjelenites_frissitese()
+            return
 
         tiszta_bevitel = ekezet_mentesites(nyers_bevitel)
         keresett_szavak = [szo for szo in tiszta_bevitel.split() if len(szo) >= 2]
         
-        talalati_lista = []
+        if not keresett_szavak: return
 
+        talalati_lista = []
         for index, sor in self.df.iterrows():
             # Keressünk mind a címkékben, mind a fájlnévben
             szoveg_amiben_keresunk = f"{sor.get('search_tags','')} {sor.get('search_name','') }"
-            
             pontszam = 0
             kizaro_ok = False
             megtalalt_fontos_szo = False # Ez figyeli, hogy a lényeg megvan-e
 
+            # 1. SZÁMOK (Évszámok) - Szigorú marad
             for szo in keresett_szavak:
-                # 1. SZÁMOK (Évszámok) - Szigorú marad
-                szamok = "".join(filter(str.isdigit, szo))
-                if len(szamok) >= 3:
-                    if szamok in szoveg_amiben_keresunk:
+                if szo.isdigit() and len(szo) >= 3:
+                    if szo in szoveg_amiben_keresunk:
                         pontszam += 500
                         megtalalt_fontos_szo = True
                     else:
-                        kizaro_ok = True
-                        break
-                
-                # 2. SZAVAK (pl. labor, hajo)
+                        kizaro_ok = True; break
                 else:
-                    # Szóhatár teszt: teljes szó egyezés vagy legalább az első 4 karakter egyezése
                     if re.search(r"\b" + re.escape(szo) + r"\b", szoveg_amiben_keresunk) or szo[:4] in szoveg_amiben_keresunk:
                         pontszam += 100
                         megtalalt_fontos_szo = True
                     else:
-                        # Ha nem találja meg pontosan, de a Fuzzy nagyon erős (>90)
-                        # akkor kap egy kevés pontot, de nem jelöljük "fontos találatnak"
                         p_fuzzy = fuzz.partial_ratio(szo, szoveg_amiben_keresunk)
-                        if p_fuzzy > 90:
-                            pontszam += p_fuzzy / 2 # Csak fél súlyú pont
+                        if p_fuzzy > 85: pontszam += p_fuzzy / 2
 
-            # A LOGIKA: 
-            # Ha nem volt rossz évszám ÉS legalább EGY fontos kulcsszót megtaláltunk
             if not kizaro_ok and megtalalt_fontos_szo:
                 talalati_lista.append((pontszam, sor))
 
         # Rendezés a legmagasabb pontszám szerint
         talalati_lista.sort(key=lambda x: x[0], reverse=True)
+        # ELMENTJÜK az összeset és alaphelyzetbe állítjuk a limitet
+        self.osszes_talalat = talalati_lista
+        self.aktualis_limit = 30
+        self.megjelenites_frissitese()
 
-        self.results_list.configure(label_text=f"Találatok ({len(talalati_lista)} db):")
-        
-        if not talalati_lista:
+        #self.results_list.configure(label_text=f"Találatok ({len(talalati_lista)} db):")
+
+    def megjelenites_frissitese(self):
+        # Töröljük a régi listát
+        for widget in self.results_list.winfo_children():
+            widget.destroy()
+
+        # Csak a limitig jelenítünk meg
+        megjelenitett = self.osszes_talalat[:self.aktualis_limit]
+        self.results_list.configure(label_text=f"Találatok ({len(self.osszes_talalat)} db, ebből {len(megjelenitett)} látható):")
+
+        if not self.osszes_talalat:
             ctk.CTkLabel(self.results_list, text="Nincs találat.").pack(pady=10)
-        else:
-            for pont, sor in talalati_lista[:100]:
-                item = ctk.CTkFrame(self.results_list)
-                item.pack(fill="x", pady=5, padx=5)
-                fajlnev = str(sor.get('Fájlnév', '')).strip()
-                eleresi_ut = str(sor.get('Elérési út', '')).strip()
-                if fajlnev:
-                    display_name = fajlnev
+            return
+
+        for pont, sor in megjelenitett:
+            item = ctk.CTkFrame(self.results_list)
+            item.pack(fill="x", pady=5, padx=5)
+            
+            fajlnev = str(sor.get('Fájlnév', '')).strip()
+            eleresi_ut = str(sor.get('Elérési út', '')).strip()
+            display_name = fajlnev if fajlnev else (os.path.basename(eleresi_ut.rstrip('/\\')) or eleresi_ut)
+
+            if self.icon_file_img:
+                ctk.CTkLabel(item, image=self.icon_file_img, text="").grid(row=0, column=0, rowspan=2, padx=(10,8), pady=8, sticky='n')
+                ctk.CTkLabel(item, text=display_name, font=("Arial", 12, "bold")).grid(row=0, column=1, sticky='w', pady=(8,0))
+                if self.icon_path_img:
+                    ctk.CTkLabel(item, image=self.icon_path_img, text="").grid(row=1, column=1, sticky='w')
+                    ctk.CTkLabel(item, text=eleresi_ut).grid(row=1, column=1, sticky='w', padx=(22,0), pady=(0,8))
                 else:
-                    # Ha nincs fájlnév, használjuk az elérési út utolsó elemét (mappa vagy fájlnév)
-                    display_name = os.path.basename(eleresi_ut.rstrip('/\\')) or eleresi_ut or '(nincs fájlnév)'
+                    ctk.CTkLabel(item, text=eleresi_ut).grid(row=1, column=1, sticky='w', pady=(0,8))
+                item.grid_columnconfigure(1, weight=1)
+            else:
+                ctk.CTkLabel(item, text=f"📄 {display_name}\n📍 {eleresi_ut}", justify="left").pack(side="left", padx=10, pady=5)
 
-                # Ha van betöltött ikon, használjunk külön label-eket (ikon + szöveg), különben fallback emoji
-                if self.icon_file_img:
-                    # Use grid inside the item to align icon and text rows neatly
-                    icon_lbl = ctk.CTkLabel(item, image=self.icon_file_img, text="")
-                    icon_lbl.grid(row=0, column=0, rowspan=2, padx=(10,8), pady=8, sticky='n')
-
-                    # Title (bold)
-                    title_lbl = ctk.CTkLabel(item, text=display_name, justify="left", font=("Arial", 12, "bold"))
-                    title_lbl.grid(row=0, column=1, sticky='w', padx=(0,6), pady=(8,0))
-
-                    # Path row with optional small icon
-                    if self.icon_path_img:
-                        path_icon_lbl = ctk.CTkLabel(item, image=self.icon_path_img, text="")
-                        path_icon_lbl.grid(row=1, column=1, sticky='w', padx=(0,6), pady=(0,8))
-                        path_lbl = ctk.CTkLabel(item, text=eleresi_ut, justify="left")
-                        path_lbl.grid(row=1, column=1, sticky='w', padx=(22,0), pady=(0,8))
-                    else:
-                        path_lbl = ctk.CTkLabel(item, text=eleresi_ut, justify="left")
-                        path_lbl.grid(row=1, column=1, sticky='w', padx=(0,6), pady=(0,8))
-
-                    item.grid_columnconfigure(1, weight=1)
-                else:
-                    info = f"📄 {display_name}\n📍 {eleresi_ut}"
-                    ctk.CTkLabel(item, text=info, justify="left", wraplength=700).pack(side="left", padx=10, pady=5)
+        if len(self.osszes_talalat) > self.aktualis_limit:
+            ctk.CTkButton(self.results_list, text="További találatok betöltése...", command=self.tobb_betoltese, fg_color="transparent", border_width=1).pack(pady=15)
+    
+    def tobb_betoltese(self):
+        """Növeli a látható találatok számát és frissíti a listát."""
+        self.aktualis_limit += 30
+        self.megjelenites_frissitese()
 
 if __name__ == "__main__":
     app = MediaKeresoApp()
