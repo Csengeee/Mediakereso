@@ -104,7 +104,7 @@ class MediaKeresoApp(ctk.CTk):
         search_frame.pack(pady=10, padx=20, fill="x")
 
         # Jobb oldali oszlop, MAIN
-        self.entry = ctk.CTkEntry(search_frame, placeholder_text="Keress címke vagy név alapján...", height=40, corner_radius=30)
+        self.entry = ctk.CTkEntry(search_frame, placeholder_text="Keress címke vagy kulcsszavak alapján...", height=40, corner_radius=30)
         self.entry.pack(side="left", padx=10, pady=10, expand=True, fill="x")
         self.entry.bind("<Return>", lambda e: self.kereses()) # Enterre is keressen
 
